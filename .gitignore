@@ -1,0 +1,7 @@
+# Geen data of gegenereerde bestanden in de repo (die worden live opgehaald/gebouwd)
+brevo.db
+brevo.db-wal
+brevo.db-shm
+payloads/
+*.html
+__pycache__/
