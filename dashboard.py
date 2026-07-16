@@ -227,9 +227,14 @@ HTML_TEMPLATE = r"""<!doctype html>
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
   .chip.off{opacity:.38}
   .chip.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,var(--surface));color:var(--ink);font-weight:600}
-  .daterange{display:inline-flex;align-items:center;gap:8px}
-  .daterange input[type=date]{background:var(--surface);border:1px solid var(--line);border-radius:9px;color:var(--ink);font:inherit;font-size:12.5px;padding:6px 9px}
-  .drsep{color:var(--muted);font-size:12px}
+  .pop{position:fixed;display:none;background:var(--surface);border:1px solid var(--ring);border-radius:14px;
+    padding:16px;box-shadow:0 14px 44px rgba(0,0,0,.28);z-index:70;min-width:236px}
+  .pop-h{font-weight:650;font-size:13.5px;margin-bottom:12px}
+  .pop-l{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink2);margin-bottom:11px}
+  .pop input[type=date]{background:var(--plane);border:1px solid var(--line);border-radius:9px;color:var(--ink);font:inherit;font-size:13px;padding:8px 10px}
+  .pop-a{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
+  .pop-a .clr{background:transparent;border:0;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;padding:6px}
+  .pop-a .app{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:8px 16px;cursor:pointer;font:inherit;font-size:13px;font-weight:600}
   input[type=search]{background:var(--surface);border:1px solid var(--line);border-radius:10px;
     color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;min-width:190px}
   .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);cursor:pointer;user-select:none}
@@ -274,12 +279,17 @@ HTML_TEMPLATE = r"""<!doctype html>
   .lbl.sm{font-weight:500;fill:var(--ink2)}
   .qlab{fill:var(--muted);font-size:10.5px}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th,td{padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+  th,td{padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
   th:first-child,td:first-child,th.l,td.l{text-align:left;font-variant-numeric:normal}
-  td:first-child{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+  td:first-child{max-width:290px;overflow:hidden;text-overflow:ellipsis}
   th{position:sticky;top:0;background:var(--card);cursor:pointer;user-select:none;color:var(--ink2);font-weight:600;z-index:1}
   th:hover{color:var(--accent)}
-  tbody tr:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+  tbody tr:nth-child(even){background:color-mix(in srgb,var(--ink) 3.5%,transparent)}
+  tbody tr:hover{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+  td.kc{position:relative;font-weight:600}
+  td.kc::before{content:"";position:absolute;right:0;top:4px;bottom:4px;width:var(--kw,0%);
+    background:color-mix(in srgb,var(--accent2) 30%,transparent);border-radius:3px 0 0 3px;z-index:0}
+  td.kc span{position:relative;z-index:1}
   .tblwrap{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:12px;margin-top:4px}
   .tchip{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--chipbg);color:var(--ink2);display:inline-flex;align-items:center;gap:5px}
   .tchip .dot{width:8px;height:8px;border-radius:50%}
@@ -303,9 +313,6 @@ HTML_TEMPLATE = r"""<!doctype html>
 
 <div class="bar">
   <div class="grp" id="ranges"></div>
-  <span class="daterange" id="daterange" style="display:none">
-    <input type="date" id="dfrom"><span class="drsep">tot</span><input type="date" id="dto">
-  </span>
   <div class="chips" id="chips"></div>
   <input id="search" type="search" placeholder="Zoek campagne..." autocomplete="off">
   <label class="toggle" id="perstog"><span class="sw"></span><span>Personeel meetellen</span></label>
@@ -374,6 +381,12 @@ HTML_TEMPLATE = r"""<!doctype html>
 </div>
 
 <div class="foot" id="foot"></div>
+</div>
+<div class="pop" id="custompop">
+  <div class="pop-h">Aangepaste periode</div>
+  <label class="pop-l">Van<input type="date" id="dfrom"></label>
+  <label class="pop-l">Tot<input type="date" id="dto"></label>
+  <div class="pop-a"><button class="clr" id="popclear">Terug naar alles</button><button class="app" id="popapply">Toepassen</button></div>
 </div>
 <div class="tip" id="tip"></div>
 
@@ -668,13 +681,17 @@ function renderRanks(cs){
 }
 
 // ---- Tabel ----
+const MND3=["","jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
+function dispDate(d){const [y,m,dd]=d.split('-');return `${+dd} ${MND3[+m]} '${y.slice(2)}`;}
 let sortKey='date', sortAsc=false;
 function renderTable(cs){
   const norms={}; byCat(cs.filter(c=>c.category!=='Personeel')).forEach(c=>norms[c.cat]=c.click);
+  const maxClick=Math.max(0.5,...cs.map(c=>c.clickRate));
   const cols=[['name','Campagne','l'],['category','Categorie','l'],['date','Datum','l'],
     ['delivered','Bezorgd'],['openRate','Open %'],['clickRate','Klik %'],['deltaN','vs norm'],
-    ['unsubR','Uitschrijf %'],['bounces','Niet bezorgd']];
+    ['unsubR','Uitschrijf %'],['ndR','Niet bezorgd %']];
   const rows=cs.map(c=>({...c, unsubR:c.delivered?c.unsub/c.delivered*100:0,
+    ndR:c.sent?(c.sent-c.delivered)/c.sent*100:0,
     deltaN:(norms[c.category]!=null)? c.clickRate-norms[c.category] : null}));
   rows.sort((a,b)=>{let x=a[sortKey],y=b[sortKey];
     if(x==null)x=-1e9; if(y==null)y=-1e9;
@@ -684,10 +701,11 @@ function renderTable(cs){
   rows.forEach(c=>{
     const flag=c.openRate>100?` <span class="flag" title="Boven 100% door Apple Mail Privacy bij een mini-lijst, geen fout.">⚠</span>`:'';
     const dn=c.deltaN==null?'<span class="qlab">-</span>':`<span class="${c.deltaN>=0?'up':'down'}">${c.deltaN>=0?'+':''}${p2(c.deltaN).replace('%','')}</span>`;
+    const kw=(Math.max(0,c.clickRate)/maxClick*100).toFixed(1);
     h+=`<tr><td class="l" title="${esc(c.name)}">${esc(c.name)}</td>
       <td class="l"><span class="tchip"><span class="dot" style="background:${catCol(c.category)}"></span>${c.category}</span></td>
-      <td class="l">${c.date}</td><td>${fmt(c.delivered)}</td><td>${p1(c.openRate)}${flag}</td>
-      <td>${p2(c.clickRate)}</td><td>${dn}</td><td>${p2(c.unsubR)}</td><td>${fmt(c.bounces)}</td></tr>`;
+      <td class="l">${dispDate(c.date)}</td><td>${fmt(c.delivered)}</td><td>${p1(c.openRate)}${flag}</td>
+      <td class="kc" style="--kw:${kw}%"><span>${p2(c.clickRate)}</span></td><td>${dn}</td><td>${p2(c.unsubR)}</td><td>${p1(c.ndR)}</td></tr>`;
   });
   const tbl=document.getElementById('tbl'); tbl.innerHTML=h+'</tbody>';
   tbl.querySelectorAll('th').forEach(th=>th.addEventListener('click',()=>{
@@ -715,19 +733,22 @@ function buildBar(){
   const ranges=[['d30','30 dagen'],['d90','90 dagen'],['y2026','2026'],['all','Alles'],['custom','Aangepast']];
   const rb=document.getElementById('ranges');
   rb.innerHTML=ranges.map(r=>`<button data-r="${r[0]}" class="${r[0]===state.range?'on':''}">${r[1]}</button>`).join('');
-  const dr=document.getElementById('daterange'), df=document.getElementById('dfrom'), dt=document.getElementById('dto');
+  const pop=document.getElementById('custompop'), df=document.getElementById('dfrom'), dt=document.getElementById('dto');
   const minD=ALL[0].date, maxD=ALL[ALL.length-1].date;
   df.min=dt.min=minD; df.max=dt.max=maxD;
   df.value=state.from||minD; dt.value=state.to||maxD;
   const setRangeBtn=r=>rb.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.r===r));
-  const showDR=()=>{dr.style.display=state.range==='custom'?'':'none';};
-  showDR();
-  rb.querySelectorAll('button').forEach(b=>b.onclick=()=>{state.range=b.dataset.r;
-    if(state.range==='custom'){state.from=df.value||minD; state.to=dt.value||maxD;}
-    setRangeBtn(state.range); showDR(); renderAll();});
-  function applyDates(){state.from=df.value||null; state.to=dt.value||null;
-    state.range='custom'; setRangeBtn('custom'); showDR(); renderAll();}
-  df.onchange=applyDates; dt.onchange=applyDates;
+  function openPop(btn){const r=btn.getBoundingClientRect(); pop.style.display='block';
+    const w=pop.offsetWidth||236; pop.style.left=Math.max(8,Math.min(r.left,innerWidth-w-8))+'px'; pop.style.top=(r.bottom+8)+'px';}
+  function closePop(){pop.style.display='none';}
+  rb.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.r==='custom'){openPop(b); return;}       // popup i.p.v. direct filteren
+    state.range=b.dataset.r; setRangeBtn(state.range); closePop(); renderAll();});
+  document.getElementById('popapply').onclick=()=>{state.from=df.value||null; state.to=dt.value||null;
+    state.range='custom'; setRangeBtn('custom'); closePop(); renderAll();};
+  document.getElementById('popclear').onclick=()=>{state.range='all'; setRangeBtn('all'); closePop(); renderAll();};
+  document.addEventListener('click',e=>{if(pop.style.display==='block'&&!pop.contains(e.target)&&!e.target.closest('[data-r="custom"]'))closePop();});
+  if(new URLSearchParams(location.search).get('pop')==='1'){setRangeBtn('custom');openPop(rb.querySelector('[data-r="custom"]'));}
   // categorie-chips: één klik = enkel die categorie, opnieuw klikken = alles terug
   const ch=document.getElementById('chips');
   ch.innerHTML=MKT.map(c=>`<span class="chip" data-c="${c}"><span class="dot" style="background:${catCol(c)}"></span>${c}</span>`).join('');
