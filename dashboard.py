@@ -242,6 +242,8 @@ HTML_TEMPLATE = r"""<!doctype html>
   .toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
   .toggle.on .sw{background:var(--accent)}
   .toggle.on .sw::after{left:17px}
+  .toggle .tct{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+  .toggle.dim{opacity:.55}
   .scope{color:var(--muted);font-size:12.5px;margin-left:auto}
   /* datakwaliteit-noot */
   .note{background:color-mix(in srgb,var(--warn) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line));
@@ -315,7 +317,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   <div class="grp" id="ranges"></div>
   <div class="chips" id="chips"></div>
   <input id="search" type="search" placeholder="Zoek campagne..." autocomplete="off">
-  <label class="toggle" id="perstog"><span class="sw"></span><span>Personeel meetellen</span></label>
+  <label class="toggle" id="perstog"><span class="sw"></span><span>Personeel meetellen</span><span class="tct" id="perscount"></span></label>
   <span class="scope" id="scope"></span>
 </div>
 
@@ -717,6 +719,12 @@ function renderTable(cs){
 function renderAll(){
   const cs=scope();
   document.getElementById('scope').textContent=`toont ${cs.length} van ${ALL.length} campagnes`;
+  // personeel-toggle transparant maken: hoeveel personeelsmails zitten er in deze periode?
+  const pip=ALL.filter(c=>c.category==='Personeel'&&inRange(c)).length;
+  const pt=document.getElementById('perstog'), pc=document.getElementById('perscount');
+  if(pc){pc.textContent = pip? `· ${pip} in periode` : '· geen in periode';
+    pt.classList.toggle('dim', pip===0);
+    pt.title = pip? '' : 'Geen personeelsmails in deze periode. Kies een langere periode (bv. 2026 of Alles) om ze mee te tellen.';}
   renderKpis(cs); renderFunnel(cs);
   // categorie-balken volgen de selectie (Personeel verschijnt grijs als de toggle aan staat);
   // de benchmark blijft zuiver marketing (Personeel telt nooit mee in het clubgemiddelde).
