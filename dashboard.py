@@ -225,7 +225,11 @@ HTML_TEMPLATE = r"""<!doctype html>
   .chip{border:1px solid var(--line);background:var(--surface);color:var(--ink2);border-radius:20px;
     padding:5px 11px 5px 9px;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;user-select:none}
   .chip .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
-  .chip.off{opacity:.4;text-decoration:line-through}
+  .chip.off{opacity:.38}
+  .chip.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,var(--surface));color:var(--ink);font-weight:600}
+  .daterange{display:inline-flex;align-items:center;gap:8px}
+  .daterange input[type=date]{background:var(--surface);border:1px solid var(--line);border-radius:9px;color:var(--ink);font:inherit;font-size:12.5px;padding:6px 9px}
+  .drsep{color:var(--muted);font-size:12px}
   input[type=search]{background:var(--surface);border:1px solid var(--line);border-radius:10px;
     color:var(--ink);font:inherit;font-size:13px;padding:8px 12px;min-width:190px}
   .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);cursor:pointer;user-select:none}
@@ -299,6 +303,9 @@ HTML_TEMPLATE = r"""<!doctype html>
 
 <div class="bar">
   <div class="grp" id="ranges"></div>
+  <span class="daterange" id="daterange" style="display:none">
+    <input type="date" id="dfrom"><span class="drsep">tot</span><input type="date" id="dto">
+  </span>
   <div class="chips" id="chips"></div>
   <input id="search" type="search" placeholder="Zoek campagne..." autocomplete="off">
   <label class="toggle" id="perstog"><span class="sw"></span><span>Personeel meetellen</span></label>
@@ -383,18 +390,21 @@ const catIdx = c => Math.max(1, CATS.indexOf(c)+1);
 const catCol = c => `var(--c${catIdx(c)})`;
 function monLab(k){const [y,m]=k.split('-');return M[+m]+" '"+y.slice(2);}
 
-let state = { range:'all', cats:new Set(MKT), q:'', pers:false };
+let state = { range:'d30', cat:null, q:'', pers:false, from:null, to:null };
 
 // ---- initiele filterstaat uit URL (voor verificatie/screenshots) ----
 (function(){const u=new URLSearchParams(location.search);
   if(u.get('p'))state.range=u.get('p');
   if(u.get('q'))state.q=u.get('q');
   if(u.get('pers')==='1')state.pers=true;
-  if(u.get('c'))state.cats=new Set(u.get('c').split(',').filter(x=>MKT.includes(x)));
+  if(u.get('c')&&MKT.includes(u.get('c')))state.cat=u.get('c');
+  if(u.get('from'))state.from=u.get('from');
+  if(u.get('to'))state.to=u.get('to');
 })();
 
 function inRange(c){
   if(state.range==='all')return true;
+  if(state.range==='custom')return (!state.from||c.date>=state.from)&&(!state.to||c.date<=state.to);
   const last=ALL[ALL.length-1].date;
   if(state.range==='y2026')return c.date>='2026-01-01';
   const days={d90:90,d30:30}[state.range]; if(!days)return true;
@@ -405,7 +415,7 @@ function scope(){
   const q=state.q.trim().toLowerCase();
   return ALL.filter(c=>{
     if(c.category==='Personeel' && !state.pers)return false;
-    if(c.category!=='Personeel' && !state.cats.has(c.category))return false;
+    if(state.cat && c.category!==state.cat && c.category!=='Personeel')return false;
     if(!inRange(c))return false;
     if(q && !c.name.toLowerCase().includes(q))return false;
     return true;
@@ -702,18 +712,30 @@ function renderAll(){
 
 // ---- filterbalk opbouwen ----
 function buildBar(){
-  const ranges=[['all','Alles'],['y2026','2026'],['d90','90 dagen'],['d30','30 dagen']];
+  const ranges=[['d30','30 dagen'],['d90','90 dagen'],['y2026','2026'],['all','Alles'],['custom','Aangepast']];
   const rb=document.getElementById('ranges');
   rb.innerHTML=ranges.map(r=>`<button data-r="${r[0]}" class="${r[0]===state.range?'on':''}">${r[1]}</button>`).join('');
+  const dr=document.getElementById('daterange'), df=document.getElementById('dfrom'), dt=document.getElementById('dto');
+  const minD=ALL[0].date, maxD=ALL[ALL.length-1].date;
+  df.min=dt.min=minD; df.max=dt.max=maxD;
+  df.value=state.from||minD; dt.value=state.to||maxD;
+  const setRangeBtn=r=>rb.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.r===r));
+  const showDR=()=>{dr.style.display=state.range==='custom'?'':'none';};
+  showDR();
   rb.querySelectorAll('button').forEach(b=>b.onclick=()=>{state.range=b.dataset.r;
-    rb.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderAll();});
+    if(state.range==='custom'){state.from=df.value||minD; state.to=dt.value||maxD;}
+    setRangeBtn(state.range); showDR(); renderAll();});
+  function applyDates(){state.from=df.value||null; state.to=dt.value||null;
+    state.range='custom'; setRangeBtn('custom'); showDR(); renderAll();}
+  df.onchange=applyDates; dt.onchange=applyDates;
+  // categorie-chips: één klik = enkel die categorie, opnieuw klikken = alles terug
   const ch=document.getElementById('chips');
-  ch.innerHTML=MKT.map(c=>`<span class="chip${state.cats.has(c)?'':' off'}" data-c="${c}"><span class="dot" style="background:${catCol(c)}"></span>${c}</span>`).join('');
+  ch.innerHTML=MKT.map(c=>`<span class="chip" data-c="${c}"><span class="dot" style="background:${catCol(c)}"></span>${c}</span>`).join('');
+  const paint=()=>ch.querySelectorAll('.chip').forEach(x=>{const c=x.dataset.c;
+    x.classList.toggle('sel',state.cat===c); x.classList.toggle('off',state.cat!==null&&state.cat!==c);});
   ch.querySelectorAll('.chip').forEach(el=>el.onclick=()=>{const c=el.dataset.c;
-    if(state.cats.has(c))state.cats.delete(c); else state.cats.add(c);
-    if(state.cats.size===0)state.cats=new Set(MKT); // nooit leeg
-    el.classList.toggle('off',!state.cats.has(c));
-    ch.querySelectorAll('.chip').forEach(x=>x.classList.toggle('off',!state.cats.has(x.dataset.c)));renderAll();});
+    state.cat=(state.cat===c)?null:c; paint(); renderAll();});
+  paint();
   const pt=document.getElementById('perstog'); pt.classList.toggle('on',state.pers);
   pt.onclick=()=>{state.pers=!state.pers;pt.classList.toggle('on',state.pers);renderAll();};
   const se=document.getElementById('search'); se.value=state.q;
